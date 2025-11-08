@@ -1,0 +1,125 @@
+# Walk-Sense
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.example.mapsimulator.databinding.ActivityMainBinding
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.model.*
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+class MainActivity : AppCompatActivity(), OnMapReadyCallback {
+
+    private lateinit var binding: ActivityMainBinding
+    private var map: GoogleMap? = null
+    private var simJob: Job? = null
+    private var movingMarker: Marker? = null
+
+    
+    private val route = listOf(
+        LatLng(19.432608, -99.133209), // CDMX - Zócalo
+        LatLng(19.4350, -99.1400),
+        LatLng(19.4375, -99.1450),
+        LatLng(19.4395, -99.1500),
+        LatLng(19.4420, -99.1530)
+    )
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        val mapFragment = supportFragmentManager.findFragmentById(R.id.mapFragment) as com.google.android.gms.maps.SupportMapFragment
+        mapFragment.getMapAsync(this)
+
+        binding.btnStart.setOnClickListener {
+            startSimulation()
+        }
+        binding.btnStop.setOnClickListener {
+            stopSimulation()
+        }
+    }
+
+    override fun onMapReady(googleMap: GoogleMap) {
+        map = googleMap
+        map?.uiSettings?.isZoomControlsEnabled = true
+
+      
+        val polylineOptions = PolylineOptions().addAll(route).width(6f).geodesic(true)
+        map?.addPolyline(polylineOptions)
+
+       
+        val first = route.first()
+        map?.moveCamera(CameraUpdateFactory.newLatLngZoom(first, 15f))
+
+      
+        movingMarker = map?.addMarker(
+            MarkerOptions()
+                .position(first)
+                .title("Simulador")
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+        )
+    }
+
+    private fun startSimulation() {
+        if (simJob?.isActive == true) return // ya corriendo
+
+        simJob = lifecycleScope.launch {
+            // Recorremos pares de puntos: de i a i+1
+            for (i in 0 until route.size - 1) {
+                val start = route[i]
+                val end = route[i + 1]
+              
+                val steps = 60
+                for (step in 1..steps) {
+                    if (!isActive) return@launch
+                    val frac = step.toDouble() / steps
+                    val lat = start.latitude + (end.latitude - start.latitude) * frac
+                    val lng = start.longitude + (end.longitude - start.longitude) * frac
+                    val position = LatLng(lat, lng)
+                    movingMarker?.position = position
+                   
+                    val bearing = calculateBearing(start, end)
+                    movingMarker?.rotation = bearing.toFloat()
+                    
+                    map?.animateCamera(CameraUpdateFactory.newLatLng(position))
+                    delay(80) // controla velocidad (ms)
+                }
+            }
+        }
+    }
+
+    private fun stopSimulation() {
+        simJob?.cancel()
+    }
+
+
+    private fun calculateBearing(from: LatLng, to: LatLng): Double {
+        val fromLat = Math.toRadians(from.latitude)
+        val fromLng = Math.toRadians(from.longitude)
+        val toLat = Math.toRadians(to.latitude)
+        val toLng = Math.toRadians(to.longitude)
+        val y = Math.sin(toLng - fromLng) * Math.cos(toLat)
+        val x = Math.cos(fromLat) * Math.sin(toLat) - Math.sin(fromLat) * Math.cos(toLat) * Math.cos(toLng - fromLng)
+        val brng = Math.toDegrees(Math.atan2(y, x))
+        return (brng + 360.0) % 360.0
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopSimulation()
+    }
+}
+
+
+
+
+
+
+
+
+
